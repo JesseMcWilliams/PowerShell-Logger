@@ -45,11 +45,11 @@ Function Test-IsFileLocked {
 
 class LoggingLevel
 {
-    [ValidateSet ("Error", "Warning", "Information", "Debug", "Verbose", "Trace")]
+    [ValidateSet ("None","Critical","Error","Warning","Information","Debug","Verbose","Trace")]
     [string]
     $LoggingLevelName
 
-    [ValidateRange(0,4)]
+    [ValidateRange(0,7)]
     [int]
     $LoggingLevelInt
 
@@ -68,34 +68,42 @@ class LoggingLevel
         # Convert logging level to INT
         switch ($LevelName)
         {
-            "Error" 
+            "None"
             {
-                return 0
+                return 6
             }
-
-            "Warning" 
+            "Critical"
             {
-                return 1
+                return 5
             }
-
-            "Information" 
-            {
-                return 2
-            }
-
-            "Debug" 
-            {
-                return 3
-            }
-
-            "Verbose" 
+            "Error"
             {
                 return 4
             }
 
-            "Trace" 
+            "Warning"
             {
-                return 5
+                return 3
+            }
+
+            "Information"
+            {
+                return 2
+            }
+
+            "Debug"
+            {
+                return 1
+            }
+
+            "Verbose"
+            {
+                return 0
+            }
+
+            "Trace"
+            {
+                return 0
             }
         }
         return -1
@@ -189,10 +197,10 @@ class LoggingObject
             $this.loggingMutex = New-Object System.Threading.Mutex($false, $this.LoggingMutexName)
             Write-Debug "Opened NEW handle."
         }
-        
-        
+
+
     }
-    
+
     # Methods
     [string]GetLoggingFile()
     {
@@ -253,11 +261,19 @@ class LoggingObject
         {
             Write-Host $Message -ForegroundColor DarkRed -BackgroundColor White
         }
+        elseif ($Level.Name() -ieq "Critical")
+        {
+            Write-Host $Message -ForegroundColor White -BackgroundColor DarkRed
+        }
+        elseif ($Level.Name() -ieq "None")
+        {
+            Write-Host $Message -ForegroundColor Blue -BackgroundColor Black
+        }
         else
         {
             Write-Host $Message
         }
-        
+
     }
 
     [void]WriteFile(
@@ -291,7 +307,7 @@ class LoggingObject
 				Add-Content -Path $this.LoggingFile -Value $Message -ErrorAction Stop
 			}
             # Capture the current date and time for the timeout
-            
+
 
             finally
                         {
@@ -310,7 +326,7 @@ class LoggingObject
 
         # Get the current date and time for the timeout
         $_AttemptWriteStartTime = Get-Date
-        
+
         #Add the entry to the log file.  If it doesn't exist we'll create it.
         try {
 			# Loop until we write successfully or the timeout is reached.
@@ -338,7 +354,7 @@ class LoggingObject
                             # A write failure occured.  Wait and restart the loop.
                             Start-Sleep -Milliseconds 50
                         }
-                        
+
 
                         # Check to see if the timeout has been exceeded and exit
                         if (($null -ne $this.Timeout) -and ((Get-Date) -gt ($_AttemptWriteStartTime + $this.Timeout)))
@@ -357,10 +373,11 @@ class LoggingObject
                     Start-Sleep -Milliseconds 50
                 }
             }
-			
+
 		}
 		catch {
-			throw $("Could not write to log file: {0}" -f $_.exception.message)
+            Write-Warning ("Failed to write to:  {0}" -f $this.LoggingFile)
+			throw $(("Could not write to log file: {0}" -f $_.exception.message))
 		}
     }
 }
@@ -383,6 +400,9 @@ class Logger
     [int]
     hidden $TimeOut
 
+    [LoggingDestination]
+    $LogDestination
+
     # Constructors
     Logger(){
         # Set the default logging level to:
@@ -391,7 +411,7 @@ class Logger
         # Set the default log file name:
         #  Get the name of the running script
         $scriptName = (Split-Path -Leaf $PSCommandPath) -replace '\.ps1$|\.psm1$'
-        
+
         #  Set the Log File Name
         $this.LogFileName = ('{0}_{1}.log' -f $(Get-Date -Format "yyyy-MM-dd"), $scriptName)
 
@@ -404,6 +424,9 @@ class Logger
 
         #  Set the Log File Object
         $this.LogFileObj = [LoggingObject]::new((Join-Path $this.LogFilePath $this.LogFileName), $this.TimeOut)
+
+        #  Set the Default Logging Destincation
+        $this.LogDestination = "Console"
 
     }
 
@@ -417,7 +440,7 @@ class Logger
         # Set the default log file name:
         #  Get the name of the running script
         $scriptName = (Split-Path -Leaf $PSCommandPath) -replace '\.ps1$|\.psm1$'
-        
+
         #  Set the Log File Name
         $this.LogFileName = ('{0}_{1}.log' -f $(Get-Date -Format "yyyy-MM-dd"), $scriptName)
 
@@ -430,6 +453,9 @@ class Logger
 
         #  Set the Log File Object
         $this.LogFileObj = [LoggingObject]::new((Join-Path $this.LogFilePath $this.LogFileName), $this.TimeOut)
+
+        #  Set the Default Logging Destincation
+        $this.LogDestination = "Console"
     }
 
     Logger(
@@ -451,7 +477,7 @@ class Logger
         {
             $this.LogFileName = ('{0}_{1}.log' -f $(Get-Date -Format "yyyy-MM-dd"), $LogFileName)
         }
-        
+
         # Set the log file object
         #  Get the path to the currently running script.
         $this.LogFilePath = Split-Path -Parent $PSCommandPath
@@ -461,6 +487,9 @@ class Logger
 
         #  Set the Log File Object
         $this.LogFileObj = [LoggingObject]::new((Join-Path $this.LogFilePath $this.LogFileName), $this.TimeOut)
+
+        #  Set the Default Logging Destincation
+        $this.LogDestination = "Both"
     }
 
     Logger(
@@ -493,7 +522,7 @@ class Logger
             #  The provided path is absolute/fully qualified
             $this.LogFilePath = $LogFolder
         }
-        else 
+        else
         {
             $this.LogFilePath = Join-Path $scriptPath $LogFolder
         }
@@ -503,6 +532,9 @@ class Logger
 
         #  Set the Log File Object
         $this.LogFileObj = [LoggingObject]::new((Join-Path $this.LogFilePath $this.LogFileName), $this.TimeOut)
+
+        #  Set the Default Logging Destincation
+        $this.LogDestination = "Both"
     }
 
     Logger(
@@ -540,7 +572,7 @@ class Logger
             #  The provided path is absolute/fully qualified
             $this.LogFilePath = $LogFolder
         }
-        else 
+        else
         {
             $this.LogFilePath = Join-Path $scriptPath $LogFolder
         }
@@ -550,6 +582,9 @@ class Logger
 
         #  Set the Log File Object
         $this.LogFileObj = [LoggingObject]::new((Join-Path $this.LogFilePath $this.LogFileName), $this.TimeOut)
+
+        #  Set the Default Logging Destincation
+        $this.LogDestination = "Both"
     }
 
     [void] SetLoggingLevel([LoggingLevel]$LoggingLevel)
@@ -573,13 +608,23 @@ class Logger
             #  The provided path is absolute/fully qualified
             $this.LogFilePath = $LogFolder
         }
-        else 
+        else
         {
             $this.LogFilePath = Join-Path $scriptPath $LogFolder
         }
 
         #  Set the Log File Object
         $this.LogFileObj.SetLoggingFile((Join-Path $this.LogFilePath $this.LogFileName))
+    }
+
+    [string] GetLogDestination()
+    {
+        return $this.LogDestination
+    }
+
+    [void] SetLogDestination([string]$LoggingDestination)
+    {
+        $this.LogDestination = $LoggingDestination
     }
 
     [string] GetLoggingPath()
@@ -648,25 +693,25 @@ class Logger
     )
     {
         # Write out the message: Console & Log, No level.
-        if ($this.TargetLogLevel.Level() -ge ([LoggingLevel]("Information")).Level())
+        if ($this.TargetLogLevel.Level() -le ([LoggingLevel]("Information")).Level())
         {
-            $this._WriteOutput($Message, "Information", "Both", $False)
+            $this._WriteOutput($Message, "Information", $this.LogDestination, $False)
         }
-        
+
     }
-    
+
     [void] Write(
         [string]$Message,
         [LoggingLevel]$Level
     )
     {
         # Write out the message: Console & Log, With level .
-        if ($this.TargetLogLevel.Level() -ge ([LoggingLevel]($Level).Name()).Level())
+        if ($this.TargetLogLevel.Level() -le ([LoggingLevel]($Level).Name()).Level())
         {
-            $this._WriteOutput($Message, $Level, "Both", $False)
+            $this._WriteOutput($Message, $Level, $this.LogDestination, $False)
         }
     }
-    
+
     [void] Write(
         [string]$Message,
         [LoggingLevel]$Level,
@@ -674,7 +719,7 @@ class Logger
     )
     {
         # Write out the message: Console or Log, With level and destination.
-        if ($this.TargetLogLevel.Level() -ge ([LoggingLevel]($Level).Name()).Level())
+        if ($this.TargetLogLevel.Level() -le ([LoggingLevel]($Level).Name()).Level())
         {
             $this._WriteOutput($Message, $Level.Name(), $Destination, $False)
         }
@@ -688,7 +733,7 @@ class Logger
     )
     {
         # Write out the message: Console or Log, With level, destination, and no prefix.
-        if ($this.TargetLogLevel.Level() -ge ([LoggingLevel]($Level).Name()).Level())
+        if ($this.TargetLogLevel.Level() -le ([LoggingLevel]($Level).Name()).Level())
         {
             $this._WriteOutput($Message, $Level.Name(), $Destination, $True)
         }
@@ -740,7 +785,7 @@ class Logger
 
         Example:    $Logger = [Logger]::new("Verbose")
                     $Logger.Write("Hello World", "Verbose")
-    
+
         This will create a new logging obect with the logging level set to Verbose.
 #>
 }
